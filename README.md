@@ -4,6 +4,8 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
+![PromptMux Screenshot](./assets/screenshot.png)
+
 ## Overview
 
 PromptMux is a visual tool for comparing responses from different Large Language Models (LLMs). Enter a prompt once, send it to multiple models simultaneously, and compare the results in an intuitive canvas interface.
