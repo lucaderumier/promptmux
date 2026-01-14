@@ -34,11 +34,6 @@ CLAUDE.md
 .claude
 .playwright-mcp/
 
-# Supabase local development
-supabase/
-
-# Keep migration files but ignore local config
-!supabase/migrations/
 
 # Test coverage
 coverage/
