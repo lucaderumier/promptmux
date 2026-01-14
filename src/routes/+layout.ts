@@ -1,0 +1,42 @@
+import { createBrowserClient, createServerClient, isBrowser } from '@supabase/ssr';
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+import type { LayoutLoad } from './$types';
+
+export const load: LayoutLoad = async ({ data, depends, fetch }) => {
+	/**
+	 * Declare a dependency so the layout will be invalidated, in case
+	 * the session was refreshed in the server.
+	 */
+	depends('supabase:auth');
+
+	const supabase = isBrowser()
+		? createBrowserClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
+				global: {
+					fetch
+				}
+			})
+		: createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
+				global: {
+					fetch
+				},
+				cookies: {
+					getAll() {
+						return data.cookies;
+					}
+				}
+			});
+
+	/**
+	 * Getting session information from the server can be done in client only.
+	 * When on server we get data from server load function.
+	 */
+	const {
+		data: { session }
+	} = await supabase.auth.getSession();
+
+	const {
+		data: { user }
+	} = await supabase.auth.getUser();
+
+	return { session, supabase, user };
+};
