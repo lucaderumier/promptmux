@@ -1,6 +1,7 @@
 /**
  * API endpoint to generate LLM responses
- * Accepts a prompt and list of models, returns responses from each
+ * Accepts a prompt (single-turn) or messages array (multi-turn) and list of models
+ * Returns responses from each model
  * API keys are fetched server-side from Supabase (more secure)
  */
 
@@ -9,8 +10,16 @@ import type { RequestHandler } from './$types';
 import type { Provider, ModelConfig, ModelResponse } from '$lib/llm/types';
 import { calculateCostCents } from '$lib/llm/types';
 import { createOpenAIProvider, createAnthropicProvider, createGoogleProvider } from '$lib/llm/providers';
-import type { ProviderInstance } from '$lib/llm/providers';
+import type { ProviderInstance, ChatMessage } from '$lib/llm/providers';
 import { decrypt } from '$lib/server/encryption';
+
+// Request format - supports both single-turn and multi-turn
+interface GenerateRequest {
+	prompt?: string; // Single-turn: just a prompt
+	messages?: ChatMessage[]; // Multi-turn: conversation history
+	models: ModelConfig[];
+	systemPrompt?: string;
+}
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const session = locals.session;
@@ -21,14 +30,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	const body = await request.json();
-	const { prompt, models, systemPrompt } = body as {
-		prompt: string;
-		models: ModelConfig[];
-		systemPrompt?: string;
-	};
+	const { prompt, messages, models, systemPrompt } = body as GenerateRequest;
 
-	if (!prompt || !models || models.length === 0) {
-		throw error(400, 'Missing prompt or models');
+	// Validate: need either prompt (single-turn) or messages (multi-turn)
+	const isMultiTurn = Array.isArray(messages) && messages.length > 0;
+	const isSingleTurn = typeof prompt === 'string' && prompt.trim().length > 0;
+
+	if (!isSingleTurn && !isMultiTurn) {
+		throw error(400, 'Missing prompt or messages');
+	}
+
+	if (!models || models.length === 0) {
+		throw error(400, 'Missing models');
 	}
 
 	// Fetch user's API keys from database
@@ -84,13 +97,22 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const startTime = Date.now();
 
 		try {
-			const result = await provider.generateText({
-				model: model.id,
-				prompt,
-				system: systemPrompt,
-				maxTokens: model.maxTokens,
-				temperature: model.temperature
-			});
+			// Use appropriate generation method based on request type
+			const result = isMultiTurn
+				? await provider.generateTextMultiTurn({
+						model: model.id,
+						messages: messages!,
+						system: systemPrompt,
+						maxTokens: model.maxTokens,
+						temperature: model.temperature
+					})
+				: await provider.generateText({
+						model: model.id,
+						prompt: prompt!,
+						system: systemPrompt,
+						maxTokens: model.maxTokens,
+						temperature: model.temperature
+					});
 
 			// Extract token usage and calculate estimated cost
 			let promptTokens: number | undefined;

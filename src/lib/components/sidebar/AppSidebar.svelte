@@ -67,11 +67,12 @@
 
 			const promptMap = await response.json();
 
-			// Load into canvas store
+			// Load into canvas store (includes follow-up data for multi-turn)
 			canvasHandlers.loadPromptMap({
 				prompt: promptMap.prompt,
 				promptPosition: promptMap.promptPosition,
-				responses: promptMap.responses
+				responses: promptMap.responses,
+				followUps: promptMap.followUps
 			});
 
 			// Navigate to canvas

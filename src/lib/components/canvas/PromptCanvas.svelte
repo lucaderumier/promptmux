@@ -3,6 +3,7 @@
 	import DotBackground from '$lib/components/ui/DotBackground.svelte';
 	import PromptCard from './PromptCard.svelte';
 	import ResponseCard from './ResponseCard.svelte';
+	import FollowUpCard from './FollowUpCard.svelte';
 	import ModelSelector from './ModelSelector.svelte';
 	import ConnectionLines from './ConnectionLines.svelte';
 	import { Minus, Plus, Crosshair, Save, Loader2, FilePlus } from '@lucide/svelte';
@@ -17,9 +18,11 @@
 	import {
 		canvasStore,
 		canvasHandlers,
-		responseNodesArray
+		responseNodesArray,
+		followUpNodesArray,
+		canvasEdges
 	} from '$lib/services/canvas/stores/canvasStore';
-	import type { ResponseNode } from '$lib/services/canvas/types/canvasTypes';
+	import type { ResponseNode, FollowUpNode, CanvasEdge } from '$lib/services/canvas/types/canvasTypes';
 	import type { ModelConfig, Provider } from '$lib/llm/types';
 
 	interface Props {
@@ -79,6 +82,8 @@
 	let promptValue = $state('');
 	let promptPosition = $state({ x: 0, y: 0 });
 	let responseNodes = $state<ResponseNode[]>([]);
+	let followUpNodes = $state<FollowUpNode[]>([]);
+	let edges = $state<CanvasEdge[]>([]);
 	let hoveredNodeId = $state<string | null>(null);
 
 	$effect(() => {
@@ -93,6 +98,20 @@
 	$effect(() => {
 		const unsubscribe = responseNodesArray.subscribe((nodes) => {
 			responseNodes = nodes;
+		});
+		return unsubscribe;
+	});
+
+	$effect(() => {
+		const unsubscribe = followUpNodesArray.subscribe((nodes) => {
+			followUpNodes = nodes;
+		});
+		return unsubscribe;
+	});
+
+	$effect(() => {
+		const unsubscribe = canvasEdges.subscribe((e) => {
+			edges = e;
 		});
 		return unsubscribe;
 	});
@@ -155,7 +174,7 @@
 
 		// Don't start drag if clicking on interactive elements or cards
 		const target = e.target as HTMLElement;
-		if (target.closest('textarea, input, button, [data-slot="card"], [data-slot="response-card"], [data-slot="prompt-card"]')) {
+		if (target.closest('textarea, input, button, [data-slot="card"], [data-slot="response-card"], [data-slot="prompt-card"], [data-slot="followup-card"]')) {
 			return;
 		}
 
@@ -309,9 +328,157 @@
 
 	// Check if a node can get a response
 	function canNodeGetResponse(node: ResponseNode): boolean {
+		// For root prompt responses
+		if (node.parentNodeType === 'prompt') {
+			return Boolean(
+				promptValue.trim() && node.modelId && node.status !== 'loading' && node.status !== 'selecting'
+			);
+		}
+		// For follow-up responses
+		const followUp = followUpNodes.find((f) => f.id === node.parentNodeId);
 		return Boolean(
-			promptValue.trim() && node.modelId && node.status !== 'loading' && node.status !== 'selecting'
+			followUp?.prompt.trim() && node.modelId && node.status !== 'loading' && node.status !== 'selecting'
 		);
+	}
+
+	// === Follow-up handlers ===
+
+	// Card dimensions for positioning
+	const FOLLOWUP_CARD_WIDTH = 400;
+	const FOLLOWUP_OFFSET_X = 250;
+
+	// Add follow-up from a response node
+	function handleAddFollowUp(responseId: string) {
+		const responseNode = responseNodes.find((n) => n.id === responseId);
+		if (!responseNode || responseNode.status !== 'done') return;
+
+		// Position follow-up to the right of the response
+		const followUpId = canvasHandlers.addFollowUpNode([responseId], {
+			x: responseNode.position.x + FOLLOWUP_CARD_WIDTH + FOLLOWUP_OFFSET_X,
+			y: responseNode.position.y
+		});
+
+		// Focus the follow-up for editing
+		toast.success('Follow-up added', {
+			description: 'Enter your follow-up question'
+		});
+	}
+
+	// Handle follow-up card drag start
+	function handleFollowUpDragStart(nodeId: string, e: MouseEvent) {
+		const node = followUpNodes.find((n) => n.id === nodeId);
+		if (!node) return;
+
+		draggingNodeId = nodeId;
+		nodeDragStartX = e.clientX;
+		nodeDragStartY = e.clientY;
+		nodeDragStartPosX = node.position.x;
+		nodeDragStartPosY = node.position.y;
+
+		document.addEventListener('mousemove', handleFollowUpMouseMove);
+		document.addEventListener('mouseup', handleMouseUp);
+	}
+
+	// Handle mouse move for follow-up dragging
+	function handleFollowUpMouseMove(e: MouseEvent) {
+		if (!draggingNodeId) return;
+
+		const deltaX = (e.clientX - nodeDragStartX) / zoomScale;
+		const deltaY = (e.clientY - nodeDragStartY) / zoomScale;
+
+		// Check if it's a follow-up node
+		const isFollowUp = followUpNodes.some((n) => n.id === draggingNodeId);
+		if (isFollowUp) {
+			canvasHandlers.updateFollowUpPosition(draggingNodeId, {
+				x: nodeDragStartPosX + deltaX,
+				y: nodeDragStartPosY + deltaY
+			});
+		}
+	}
+
+	// Add response node to a follow-up
+	function handleAddFollowUpResponseNode(followUpId: string) {
+		const followUp = followUpNodes.find((n) => n.id === followUpId);
+		if (!followUp) return;
+
+		// Calculate position based on existing children
+		const existingChildren = followUp.childResponseIds.length;
+		const baseX = followUp.position.x + FOLLOWUP_CARD_WIDTH + NODE_OFFSET_X;
+		const baseY = followUp.position.y;
+		const verticalOffset = existingChildren * 120;
+
+		const nodeId = canvasHandlers.addFollowUpResponseNode(followUpId, {
+			x: baseX,
+			y: baseY + verticalOffset
+		});
+
+		// Open model selector
+		selectorOpenForNode = nodeId;
+	}
+
+	// Get response for a follow-up response node (uses conversation history)
+	async function handleGetFollowUpResponse(nodeId: string) {
+		const node = responseNodes.find((n) => n.id === nodeId);
+		if (!node || !node.modelId || node.parentNodeType !== 'followup') return;
+
+		const followUp = followUpNodes.find((f) => f.id === node.parentNodeId);
+		if (!followUp || !followUp.prompt.trim()) return;
+
+		// Build conversation history
+		const messages = canvasHandlers.buildConversationHistory(followUp.id, 'followup');
+
+		// Set node to loading
+		canvasHandlers.setNodeLoading(nodeId);
+
+		try {
+			const response = await fetch('/api/llm/generate', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					messages: messages.map((m) => ({ role: m.role, content: m.content })),
+					models: [
+						{
+							id: node.modelId,
+							name: node.modelName,
+							provider: node.provider
+						}
+					]
+				})
+			});
+
+			if (!response.ok) {
+				const error = await response.json();
+				throw new Error(error.message || 'Failed to generate response');
+			}
+
+			const data = await response.json();
+			const resp = data.responses[0];
+
+			if (resp.error) {
+				canvasHandlers.setNodeError(nodeId, resp.error);
+			} else {
+				canvasHandlers.setNodeResponse(nodeId, resp.response, resp.latencyMs, {
+					promptTokens: resp.promptTokens,
+					completionTokens: resp.completionTokens,
+					costCents: resp.costCents
+				});
+			}
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'An error occurred';
+			canvasHandlers.setNodeError(nodeId, message);
+		}
+	}
+
+	// Unified handler that routes to correct response function
+	function handleGetResponseUnified(nodeId: string) {
+		const node = responseNodes.find((n) => n.id === nodeId);
+		if (!node) return;
+
+		if (node.parentNodeType === 'followup') {
+			handleGetFollowUpResponse(nodeId);
+		} else {
+			handleGetResponse(nodeId);
+		}
 	}
 
 	// Cleanup on unmount
@@ -344,7 +511,7 @@
 
 	// Check if canvas has content
 	const hasContent = $derived(
-		promptValue.trim().length > 0 || responseNodes.length > 0
+		promptValue.trim().length > 0 || responseNodes.length > 0 || followUpNodes.length > 0
 	);
 
 	// New canvas - clear with undo support
@@ -403,6 +570,7 @@
 					responses: responseNodes
 						.filter((n) => n.modelId)
 						.map((n) => ({
+							id: n.id, // Client-side ID for linking
 							provider: n.provider,
 							model: n.modelId,
 							modelName: n.modelName,
@@ -414,8 +582,17 @@
 							rating: n.rating,
 							notes: n.notes,
 							liked: n.liked,
-							position: n.position
-						}))
+							position: n.position,
+							parentNodeId: n.parentNodeId,
+							parentNodeType: n.parentNodeType
+						})),
+					followUps: followUpNodes.map((f) => ({
+						id: f.id, // Client-side ID for linking
+						prompt: f.prompt,
+						position: f.position,
+						depth: f.depth,
+						parentResponseIds: f.parentResponseIds
+					}))
 				})
 			});
 
@@ -478,8 +655,10 @@
 				<ConnectionLines
 					{promptCardRect}
 					{responseNodes}
+					{followUpNodes}
+					{edges}
 					{hoveredNodeId}
-					onHoverNode={(id) => canvasHandlers.setHoveredNode(id)}
+					onHoverNode={(id: string | null) => canvasHandlers.setHoveredNode(id)}
 				/>
 			</div>
 
@@ -509,9 +688,29 @@
 							{node}
 							onRemove={() => canvasHandlers.removeResponseNode(node.id)}
 							onDragStart={(e) => handleNodeDragStart(node.id, e)}
-							onGetResponse={() => handleGetResponse(node.id)}
+							onGetResponse={() => handleGetResponseUnified(node.id)}
 							onToggleLike={() => canvasHandlers.toggleLike(node.id)}
+							onAddFollowUp={() => handleAddFollowUp(node.id)}
 							canGetResponse={canNodeGetResponse(node)}
+						/>
+					</div>
+				</div>
+			{/each}
+
+			<!-- Follow-up Nodes -->
+			{#each followUpNodes as node (node.id)}
+				<div
+					class="absolute left-1/2 top-1/2"
+					style="transform: translate({node.position.x}px, {node.position.y}px);"
+				>
+					<div class="canvas-appear">
+						<FollowUpCard
+							{node}
+							onPromptChange={(prompt) => canvasHandlers.setFollowUpPrompt(node.id, prompt)}
+							onAddNode={() => handleAddFollowUpResponseNode(node.id)}
+							onRemove={() => canvasHandlers.removeFollowUpNode(node.id)}
+							onDragStart={(e) => handleFollowUpDragStart(node.id, e)}
+							depthWarning={canvasHandlers.checkDepthWarning(node.id)}
 						/>
 					</div>
 				</div>
@@ -520,8 +719,13 @@
 			<!-- Floating Model Selectors (on connection lines) -->
 			{#each responseNodes as node (node.id)}
 				{#if node.status === 'selecting'}
-					{@const midX = (promptCardRect.x + promptCardRect.width + node.position.x) / 2}
-					{@const midY = (promptCardRect.y + promptCardRect.height / 2 + node.position.y + 200) / 2}
+					{@const parentIsFollowUp = node.parentNodeType === 'followup'}
+					{@const followUpParent = parentIsFollowUp ? followUpNodes.find((f) => f.id === node.parentNodeId) : null}
+					{@const sourceRect = parentIsFollowUp && followUpParent
+						? { x: followUpParent.position.x, y: followUpParent.position.y, width: FOLLOWUP_CARD_WIDTH, height: 300 }
+						: promptCardRect}
+					{@const midX = sourceRect ? (sourceRect.x + sourceRect.width + node.position.x) / 2 : 0}
+					{@const midY = sourceRect ? (sourceRect.y + sourceRect.height / 2 + node.position.y + 200) / 2 : 0}
 					<div
 						class="absolute left-1/2 top-1/2"
 						style="transform: translate({midX}px, {midY}px);"

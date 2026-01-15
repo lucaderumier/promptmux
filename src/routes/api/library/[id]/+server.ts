@@ -1,5 +1,5 @@
 /**
- * API endpoint to get a prompt map with its responses
+ * API endpoint to get a prompt map with its responses and follow-ups
  */
 
 import { json, error } from '@sveltejs/kit';
@@ -64,8 +64,73 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		liked: boolean | null;
 		position_x: number | null;
 		position_y: number | null;
+		parent_node_id: string | null;
+		parent_node_type: string | null;
 		created_at: string;
 	}[];
+
+	// Fetch follow-up prompts
+	const { data: followUpsData, error: followUpsError } = await supabase
+		.from('follow_up_prompts')
+		.select('*')
+		.eq('prompt_map_id', id)
+		.order('created_at', { ascending: true });
+
+	if (followUpsError) {
+		console.error('Failed to fetch follow-ups:', followUpsError);
+		// Don't fail entirely, just return empty follow-ups
+	}
+
+	const followUps = (followUpsData || []) as {
+		id: string;
+		prompt: string;
+		position_x: number | null;
+		position_y: number | null;
+		depth: number | null;
+		status: string | null;
+		created_at: string;
+	}[];
+
+	// Fetch follow-up parent relationships
+	const followUpIds = followUps.map((f) => f.id);
+	let followUpParents: { follow_up_id: string; parent_response_id: string; merge_order: number }[] =
+		[];
+
+	if (followUpIds.length > 0) {
+		const { data: parentsData, error: parentsError } = await supabase
+			.from('follow_up_parents')
+			.select('*')
+			.in('follow_up_id', followUpIds)
+			.order('merge_order', { ascending: true });
+
+		if (parentsError) {
+			console.error('Failed to fetch follow-up parents:', parentsError);
+		} else {
+			followUpParents = (parentsData || []) as {
+				follow_up_id: string;
+				parent_response_id: string;
+				merge_order: number;
+			}[];
+		}
+	}
+
+	// Build a map of follow-up ID to parent response IDs
+	const followUpParentsMap = new Map<string, string[]>();
+	followUpParents.forEach((p) => {
+		const existing = followUpParentsMap.get(p.follow_up_id) || [];
+		existing.push(p.parent_response_id);
+		followUpParentsMap.set(p.follow_up_id, existing);
+	});
+
+	// Build a map of follow-up ID to child response IDs
+	const followUpChildrenMap = new Map<string, string[]>();
+	responses.forEach((r) => {
+		if (r.parent_node_type === 'followup' && r.parent_node_id) {
+			const existing = followUpChildrenMap.get(r.parent_node_id) || [];
+			existing.push(r.id);
+			followUpChildrenMap.set(r.parent_node_id, existing);
+		}
+	});
 
 	return json({
 		id: promptMap.id,
@@ -94,7 +159,22 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 				x: r.position_x || 0,
 				y: r.position_y || 0
 			},
+			parentNodeId: r.parent_node_id,
+			parentNodeType: r.parent_node_type as 'prompt' | 'followup' | null,
 			createdAt: r.created_at
+		})),
+		followUps: followUps.map((f) => ({
+			id: f.id,
+			prompt: f.prompt,
+			position: {
+				x: f.position_x || 0,
+				y: f.position_y || 0
+			},
+			depth: f.depth || 1,
+			status: f.status || 'ready',
+			parentResponseIds: followUpParentsMap.get(f.id) || [],
+			childResponseIds: followUpChildrenMap.get(f.id) || [],
+			createdAt: f.created_at
 		}))
 	});
 };
@@ -109,10 +189,7 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 
 	const { id } = params;
 
-	// First delete the model responses (cascade should handle this but let's be explicit)
-	await supabase.from('model_responses').delete().eq('prompt_map_id', id);
-
-	// Then delete the prompt map
+	// Cascade delete will handle follow_up_parents, follow_up_prompts, and model_responses
 	const { error: deleteError } = await supabase
 		.from('prompt_maps')
 		.delete()
@@ -142,7 +219,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		throw error(400, 'Name is required');
 	}
 
-	const { error: updateError } = await supabase
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const { error: updateError } = await (supabase as any)
 		.from('prompt_maps')
 		.update({ name: name.trim(), updated_at: new Date().toISOString() })
 		.eq('id', id)

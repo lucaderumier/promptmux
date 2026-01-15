@@ -8,4 +8,4 @@ export { createAnthropicProvider } from './anthropic';
 export { createGoogleProvider } from './google';
 
 // Re-export types
-export type { ProviderInstance } from './base';
+export type { ProviderInstance, ChatMessage, GenerateResult } from './base';

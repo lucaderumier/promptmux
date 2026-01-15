@@ -16,24 +16,24 @@ export interface Database {
 					user_id: string;
 					provider: string;
 					encrypted_key: string;
-					created_at: string;
-					updated_at: string;
+					created_at: string | null;
+					updated_at: string | null;
 				};
 				Insert: {
 					id?: string;
 					user_id: string;
 					provider: string;
 					encrypted_key: string;
-					created_at?: string;
-					updated_at?: string;
+					created_at?: string | null;
+					updated_at?: string | null;
 				};
 				Update: {
 					id?: string;
 					user_id?: string;
 					provider?: string;
 					encrypted_key?: string;
-					created_at?: string;
-					updated_at?: string;
+					created_at?: string | null;
+					updated_at?: string | null;
 				};
 			};
 			// Prompt maps (saved sessions)
@@ -44,8 +44,10 @@ export interface Database {
 					folder_id: string | null;
 					name: string;
 					prompt: string;
-					created_at: string;
-					updated_at: string;
+					prompt_position_x: number | null;
+					prompt_position_y: number | null;
+					created_at: string | null;
+					updated_at: string | null;
 				};
 				Insert: {
 					id?: string;
@@ -53,8 +55,10 @@ export interface Database {
 					folder_id?: string | null;
 					name: string;
 					prompt: string;
-					created_at?: string;
-					updated_at?: string;
+					prompt_position_x?: number | null;
+					prompt_position_y?: number | null;
+					created_at?: string | null;
+					updated_at?: string | null;
 				};
 				Update: {
 					id?: string;
@@ -62,8 +66,10 @@ export interface Database {
 					folder_id?: string | null;
 					name?: string;
 					prompt?: string;
-					created_at?: string;
-					updated_at?: string;
+					prompt_position_x?: number | null;
+					prompt_position_y?: number | null;
+					created_at?: string | null;
+					updated_at?: string | null;
 				};
 			};
 			// Model responses within a prompt map
@@ -77,7 +83,15 @@ export interface Database {
 					rating: number | null;
 					notes: string | null;
 					latency_ms: number | null;
-					created_at: string;
+					position_x: number | null;
+					position_y: number | null;
+					liked: boolean | null;
+					cost_cents: number | null;
+					prompt_tokens: number | null;
+					completion_tokens: number | null;
+					parent_node_id: string | null;
+					parent_node_type: string | null;
+					created_at: string | null;
 				};
 				Insert: {
 					id?: string;
@@ -88,7 +102,15 @@ export interface Database {
 					rating?: number | null;
 					notes?: string | null;
 					latency_ms?: number | null;
-					created_at?: string;
+					position_x?: number | null;
+					position_y?: number | null;
+					liked?: boolean | null;
+					cost_cents?: number | null;
+					prompt_tokens?: number | null;
+					completion_tokens?: number | null;
+					parent_node_id?: string | null;
+					parent_node_type?: string | null;
+					created_at?: string | null;
 				};
 				Update: {
 					id?: string;
@@ -99,7 +121,15 @@ export interface Database {
 					rating?: number | null;
 					notes?: string | null;
 					latency_ms?: number | null;
-					created_at?: string;
+					position_x?: number | null;
+					position_y?: number | null;
+					liked?: boolean | null;
+					cost_cents?: number | null;
+					prompt_tokens?: number | null;
+					completion_tokens?: number | null;
+					parent_node_id?: string | null;
+					parent_node_type?: string | null;
+					created_at?: string | null;
 				};
 			};
 			// Folders for organizing prompt maps
@@ -109,21 +139,117 @@ export interface Database {
 					user_id: string;
 					parent_id: string | null;
 					name: string;
-					created_at: string;
+					created_at: string | null;
 				};
 				Insert: {
 					id?: string;
 					user_id: string;
 					parent_id?: string | null;
 					name: string;
-					created_at?: string;
+					created_at?: string | null;
 				};
 				Update: {
 					id?: string;
 					user_id?: string;
 					parent_id?: string | null;
 					name?: string;
-					created_at?: string;
+					created_at?: string | null;
+				};
+			};
+			// User profiles
+			user_profiles: {
+				Row: {
+					id: string;
+					user_id: string;
+					display_name: string | null;
+					bio: string | null;
+					avatar_url: string | null;
+					website: string | null;
+					twitter: string | null;
+					github: string | null;
+					linkedin: string | null;
+					created_at: string | null;
+					updated_at: string | null;
+				};
+				Insert: {
+					id?: string;
+					user_id: string;
+					display_name?: string | null;
+					bio?: string | null;
+					avatar_url?: string | null;
+					website?: string | null;
+					twitter?: string | null;
+					github?: string | null;
+					linkedin?: string | null;
+					created_at?: string | null;
+					updated_at?: string | null;
+				};
+				Update: {
+					id?: string;
+					user_id?: string;
+					display_name?: string | null;
+					bio?: string | null;
+					avatar_url?: string | null;
+					website?: string | null;
+					twitter?: string | null;
+					github?: string | null;
+					linkedin?: string | null;
+					created_at?: string | null;
+					updated_at?: string | null;
+				};
+			};
+			// Follow-up prompts for multi-turn conversations
+			follow_up_prompts: {
+				Row: {
+					id: string;
+					prompt_map_id: string;
+					prompt: string;
+					position_x: number | null;
+					position_y: number | null;
+					depth: number | null;
+					status: string | null;
+					created_at: string | null;
+				};
+				Insert: {
+					id?: string;
+					prompt_map_id: string;
+					prompt: string;
+					position_x?: number | null;
+					position_y?: number | null;
+					depth?: number | null;
+					status?: string | null;
+					created_at?: string | null;
+				};
+				Update: {
+					id?: string;
+					prompt_map_id?: string;
+					prompt?: string;
+					position_x?: number | null;
+					position_y?: number | null;
+					depth?: number | null;
+					status?: string | null;
+					created_at?: string | null;
+				};
+			};
+			// Junction table for multi-parent follow-ups
+			follow_up_parents: {
+				Row: {
+					id: string;
+					follow_up_id: string;
+					parent_response_id: string;
+					merge_order: number | null;
+				};
+				Insert: {
+					id?: string;
+					follow_up_id: string;
+					parent_response_id: string;
+					merge_order?: number | null;
+				};
+				Update: {
+					id?: string;
+					follow_up_id?: string;
+					parent_response_id?: string;
+					merge_order?: number | null;
 				};
 			};
 		};
