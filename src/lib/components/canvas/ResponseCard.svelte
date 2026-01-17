@@ -14,10 +14,11 @@
 		onGetResponse?: () => void;
 		onToggleLike?: () => void;
 		onAddFollowUp?: () => void;
+		onOpenDetail?: () => void;
 		canGetResponse?: boolean;
 	}
 
-	let { node, onRemove, onDragStart, onGetResponse, onToggleLike, onAddFollowUp, canGetResponse = false }: Props = $props();
+	let { node, onRemove, onDragStart, onGetResponse, onToggleLike, onAddFollowUp, onOpenDetail, canGetResponse = false }: Props = $props();
 
 	const providerConfig = $derived(
 		node.provider ? PROVIDER_CONFIGS.find((p) => p.id === node.provider) : null
@@ -55,10 +56,19 @@
 		}
 		onDragStart?.(e);
 	}
+
+	function handleDoubleClick(e: MouseEvent) {
+		// Only open detail panel if there's a response to show
+		if (node.response && node.status === 'done') {
+			e.preventDefault();
+			e.stopPropagation();
+			onOpenDetail?.();
+		}
+	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="relative" onmousedown={handleMouseDown}>
+<div class="relative" onmousedown={handleMouseDown} ondblclick={handleDoubleClick}>
 	<Card.Root
 		class="w-[400px] shadow-lg select-none cursor-grab active:cursor-grabbing"
 		data-slot="response-card"

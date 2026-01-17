@@ -58,7 +58,8 @@
     "@ai-sdk/openai": "^1.0.0",
     "@supabase/ssr": "^0.6.0",
     "@supabase/supabase-js": "^2.49.0",
-    "ai": "^4.0.0"
+    "ai": "^4.0.0",
+    "marked": "^17.0.1"
   },
   "type": "module"
 }

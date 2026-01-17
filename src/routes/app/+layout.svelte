@@ -11,11 +11,11 @@
 <Sidebar.Provider bind:open={defaultOpen}>
 	<AppSidebar user={data.user} supabase={data.supabase} recentPromptMaps={data.recentPromptMaps} />
 	<Sidebar.Inset>
-		<header class="flex h-14 shrink-0 items-center gap-2 px-4">
-			<Sidebar.Trigger class="-ml-1" />
-		</header>
-		<main class="flex-1 overflow-auto p-6">
-			{@render children()}
-		</main>
+		<div class="relative h-full w-full">
+			<Sidebar.Trigger class="absolute left-4 top-4 z-50" />
+			<main class="h-full w-full overflow-hidden">
+				{@render children()}
+			</main>
+		</div>
 	</Sidebar.Inset>
 </Sidebar.Provider>

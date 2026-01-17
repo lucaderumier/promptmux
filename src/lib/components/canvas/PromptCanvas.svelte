@@ -3,6 +3,7 @@
 	import DotBackground from '$lib/components/ui/DotBackground.svelte';
 	import PromptCard from './PromptCard.svelte';
 	import ResponseCard from './ResponseCard.svelte';
+	import ResponseDetailPanel from './ResponseDetailPanel.svelte';
 	import FollowUpCard from './FollowUpCard.svelte';
 	import ModelSelector from './ModelSelector.svelte';
 	import ConnectionLines from './ConnectionLines.svelte';
@@ -78,6 +79,9 @@
 	let isSaving = $state(false);
 	let saveError = $state<string | null>(null);
 
+	// Response detail panel state
+	let detailPanelNodeId = $state<string | null>(null);
+
 	// Subscribe to store
 	let promptValue = $state('');
 	let promptPosition = $state({ x: 0, y: 0 });
@@ -85,6 +89,25 @@
 	let followUpNodes = $state<FollowUpNode[]>([]);
 	let edges = $state<CanvasEdge[]>([]);
 	let hoveredNodeId = $state<string | null>(null);
+
+	// Derived state for detail panel (must be after responseNodes declaration)
+	const detailPanelNode = $derived(
+		detailPanelNodeId ? responseNodes.find((n) => n.id === detailPanelNodeId) : null
+	);
+
+	// Sibling nodes for the detail panel (same parent node)
+	const detailPanelSiblings = $derived.by(() => {
+		if (!detailPanelNode) return [];
+		// Find all response nodes with the same parent (same parentNodeId and parentNodeType)
+		// Only include nodes that have a response (status === 'done')
+		return responseNodes.filter(
+			(n) =>
+				n.parentNodeId === detailPanelNode.parentNodeId &&
+				n.parentNodeType === detailPanelNode.parentNodeType &&
+				n.status === 'done' &&
+				n.response
+		);
+	});
 
 	$effect(() => {
 		const unsubscribe = canvasStore.subscribe((state) => {
@@ -691,6 +714,7 @@
 							onGetResponse={() => handleGetResponseUnified(node.id)}
 							onToggleLike={() => canvasHandlers.toggleLike(node.id)}
 							onAddFollowUp={() => handleAddFollowUp(node.id)}
+							onOpenDetail={() => (detailPanelNodeId = node.id)}
 							canGetResponse={canNodeGetResponse(node)}
 						/>
 					</div>
@@ -856,6 +880,16 @@
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>
+
+	<!-- Response Detail Panel -->
+	{#if detailPanelNode}
+		<ResponseDetailPanel
+			node={detailPanelNode}
+			siblingNodes={detailPanelSiblings}
+			onClose={() => (detailPanelNodeId = null)}
+			onSelectNode={(nodeId) => (detailPanelNodeId = nodeId)}
+		/>
+	{/if}
 </div>
 
 <style>
