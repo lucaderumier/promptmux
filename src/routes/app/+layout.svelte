@@ -13,7 +13,7 @@
 	<Sidebar.Inset>
 		<div class="relative h-full w-full">
 			<Sidebar.Trigger class="absolute left-4 top-4 z-50" />
-			<main class="h-full w-full overflow-hidden">
+			<main class="h-full w-full overflow-hidden pt-16 pl-16">
 				{@render children()}
 			</main>
 		</div>
