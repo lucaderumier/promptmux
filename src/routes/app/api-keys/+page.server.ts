@@ -61,7 +61,7 @@ export const actions: Actions = {
 		}
 
 		// Validate provider
-		const validProviders: Provider[] = ['openai', 'anthropic', 'google'];
+		const validProviders: Provider[] = ['openai', 'anthropic', 'google', 'deepseek', 'xai', 'mistral'];
 		if (!validProviders.includes(provider)) {
 			return fail(400, { error: 'Invalid provider' });
 		}

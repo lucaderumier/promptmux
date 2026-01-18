@@ -1,27 +1,27 @@
 /**
- * Anthropic provider implementation using Vercel AI SDK
+ * Mistral provider implementation using Vercel AI SDK
  */
 
-import { createAnthropic } from '@ai-sdk/anthropic';
+import { createMistral } from '@ai-sdk/mistral';
 import { generateText } from 'ai';
 import type { ProviderInstance, CreateProviderOptions, GenerateResult } from './base';
 import { formatUsage } from './base';
 
-export function createAnthropicProvider(options: CreateProviderOptions): ProviderInstance {
-	const anthropic = createAnthropic({
+export function createMistralProvider(options: CreateProviderOptions): ProviderInstance {
+	const mistral = createMistral({
 		apiKey: options.apiKey
 	});
 
 	return {
-		provider: 'anthropic',
+		provider: 'mistral',
 
 		// Single-turn text generation
 		generateText: async ({ model, prompt, system, maxTokens, temperature }): Promise<GenerateResult> => {
 			const result = await generateText({
-				model: anthropic(model),
+				model: mistral(model),
 				prompt,
 				system,
-				maxOutputTokens: maxTokens ?? 4096,
+				maxOutputTokens: maxTokens,
 				temperature
 			});
 
@@ -34,13 +34,13 @@ export function createAnthropicProvider(options: CreateProviderOptions): Provide
 		// Multi-turn conversation generation
 		generateTextMultiTurn: async ({ model, messages, system, maxTokens, temperature }): Promise<GenerateResult> => {
 			const result = await generateText({
-				model: anthropic(model),
+				model: mistral(model),
 				messages: messages.map((m) => ({
 					role: m.role,
 					content: m.content
 				})),
 				system,
-				maxOutputTokens: maxTokens ?? 4096,
+				maxOutputTokens: maxTokens,
 				temperature
 			});
 

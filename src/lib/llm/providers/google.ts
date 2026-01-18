@@ -5,20 +5,12 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { generateText } from 'ai';
 import type { ProviderInstance, CreateProviderOptions, GenerateResult } from './base';
+import { formatUsage } from './base';
 
 export function createGoogleProvider(options: CreateProviderOptions): ProviderInstance {
 	const google = createGoogleGenerativeAI({
 		apiKey: options.apiKey
 	});
-
-	// Helper to format usage
-	const formatUsage = (usage: { promptTokens: number; completionTokens: number } | undefined) =>
-		usage
-			? {
-					promptTokens: usage.promptTokens,
-					completionTokens: usage.completionTokens
-				}
-			: undefined;
 
 	return {
 		provider: 'google',
@@ -29,7 +21,7 @@ export function createGoogleProvider(options: CreateProviderOptions): ProviderIn
 				model: google(model),
 				prompt,
 				system,
-				maxTokens,
+				maxOutputTokens: maxTokens,
 				temperature
 			});
 
@@ -48,7 +40,7 @@ export function createGoogleProvider(options: CreateProviderOptions): ProviderIn
 					content: m.content
 				})),
 				system,
-				maxTokens,
+				maxOutputTokens: maxTokens,
 				temperature
 			});
 

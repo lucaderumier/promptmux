@@ -9,7 +9,14 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { Provider, ModelConfig, ModelResponse } from '$lib/llm/types';
 import { calculateCostCents } from '$lib/llm/types';
-import { createOpenAIProvider, createAnthropicProvider, createGoogleProvider } from '$lib/llm/providers';
+import {
+	createOpenAIProvider,
+	createAnthropicProvider,
+	createGoogleProvider,
+	createDeepSeekProvider,
+	createXAIProvider,
+	createMistralProvider
+} from '$lib/llm/providers';
 import type { ProviderInstance, ChatMessage } from '$lib/llm/providers';
 import { decrypt } from '$lib/server/encryption';
 
@@ -162,7 +169,12 @@ function createProvider(provider: Provider, apiKey: string): ProviderInstance | 
 			return createAnthropicProvider({ apiKey });
 		case 'google':
 			return createGoogleProvider({ apiKey });
-		// Add more providers as needed
+		case 'deepseek':
+			return createDeepSeekProvider({ apiKey });
+		case 'xai':
+			return createXAIProvider({ apiKey });
+		case 'mistral':
+			return createMistralProvider({ apiKey });
 		default:
 			return null;
 	}

@@ -19,6 +19,16 @@ export interface GenerateResult {
 	};
 }
 
+// Helper to format usage from AI SDK v6 format to our internal format
+export function formatUsage(usage: { inputTokens?: number; outputTokens?: number } | undefined) {
+	return usage?.inputTokens !== undefined && usage?.outputTokens !== undefined
+		? {
+				promptTokens: usage.inputTokens,
+				completionTokens: usage.outputTokens
+			}
+		: undefined;
+}
+
 export interface ProviderInstance {
 	provider: Provider;
 

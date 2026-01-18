@@ -5,20 +5,12 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 import type { ProviderInstance, CreateProviderOptions, GenerateResult } from './base';
+import { formatUsage } from './base';
 
 export function createOpenAIProvider(options: CreateProviderOptions): ProviderInstance {
 	const openai = createOpenAI({
 		apiKey: options.apiKey
 	});
-
-	// Helper to format usage
-	const formatUsage = (usage: { promptTokens: number; completionTokens: number } | undefined) =>
-		usage
-			? {
-					promptTokens: usage.promptTokens,
-					completionTokens: usage.completionTokens
-				}
-			: undefined;
 
 	return {
 		provider: 'openai',
@@ -29,7 +21,7 @@ export function createOpenAIProvider(options: CreateProviderOptions): ProviderIn
 				model: openai(model),
 				prompt,
 				system,
-				maxTokens,
+				maxOutputTokens: maxTokens,
 				temperature
 			});
 
@@ -48,7 +40,7 @@ export function createOpenAIProvider(options: CreateProviderOptions): ProviderIn
 					content: m.content
 				})),
 				system,
-				maxTokens,
+				maxOutputTokens: maxTokens,
 				temperature
 			});
 

@@ -2,7 +2,7 @@
  * Core types for LLM provider integrations
  */
 
-export type Provider = 'openai' | 'anthropic' | 'google' | 'mistral' | 'cohere';
+export type Provider = 'openai' | 'anthropic' | 'google' | 'deepseek' | 'xai' | 'mistral' | 'cohere';
 
 export interface ModelConfig {
 	id: string;
@@ -111,8 +111,18 @@ export const AVAILABLE_MODELS: Record<Provider, ModelConfig[]> = {
 		{ id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', provider: 'google' },
 		{ id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash-Lite', provider: 'google' }
 	],
+	deepseek: [
+		{ id: 'deepseek-chat', name: 'DeepSeek V3', provider: 'deepseek' },
+		{ id: 'deepseek-reasoner', name: 'DeepSeek R1', provider: 'deepseek' }
+	],
+	xai: [
+		{ id: 'grok-3', name: 'Grok 3', provider: 'xai' },
+		{ id: 'grok-3-mini', name: 'Grok 3 Mini', provider: 'xai' },
+		{ id: 'grok-2', name: 'Grok 2', provider: 'xai' }
+	],
 	mistral: [
 		{ id: 'mistral-large-latest', name: 'Mistral Large', provider: 'mistral' },
+		{ id: 'codestral-latest', name: 'Codestral', provider: 'mistral' },
 		{ id: 'mistral-small-latest', name: 'Mistral Small', provider: 'mistral' }
 	],
 	cohere: [
@@ -171,8 +181,16 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
 	// Google Gemini 2.0 Series
 	'gemini-2.0-flash': { input: 0.075, output: 0.3 },
 	'gemini-2.0-flash-lite': { input: 0.02, output: 0.08 },
+	// DeepSeek
+	'deepseek-chat': { input: 0.27, output: 1.1 },
+	'deepseek-reasoner': { input: 0.55, output: 2.19 },
+	// xAI
+	'grok-3': { input: 3, output: 15 },
+	'grok-3-mini': { input: 0.3, output: 0.5 },
+	'grok-2': { input: 2, output: 10 },
 	// Mistral
 	'mistral-large-latest': { input: 2, output: 6 },
+	'codestral-latest': { input: 0.3, output: 0.9 },
 	'mistral-small-latest': { input: 0.2, output: 0.6 },
 	// Cohere
 	'command-r-plus': { input: 2.5, output: 10 },

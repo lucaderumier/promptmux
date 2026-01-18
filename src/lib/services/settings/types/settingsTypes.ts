@@ -53,5 +53,29 @@ export const PROVIDER_CONFIGS: ProviderConfig[] = [
 		docsUrl: 'https://aistudio.google.com/app/apikey',
 		keyPrefix: 'AIza',
 		logo: '/logos/gemini.svg'
+	},
+	{
+		id: 'deepseek',
+		name: 'DeepSeek',
+		description: 'DeepSeek V3, DeepSeek R1 models',
+		docsUrl: 'https://platform.deepseek.com/api_keys',
+		keyPrefix: 'sk-',
+		logo: '/logos/deepseek.svg'
+	},
+	{
+		id: 'xai',
+		name: 'xAI',
+		description: 'Grok 2, Grok 3 models',
+		docsUrl: 'https://console.x.ai',
+		keyPrefix: 'xai-',
+		logo: '/logos/xai.svg'
+	},
+	{
+		id: 'mistral',
+		name: 'Mistral',
+		description: 'Mistral Large, Codestral models',
+		docsUrl: 'https://console.mistral.ai/api-keys',
+		keyPrefix: '',
+		logo: '/logos/mistral.svg'
 	}
 ];
