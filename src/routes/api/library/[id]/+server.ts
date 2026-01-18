@@ -1,9 +1,40 @@
 /**
- * API endpoint to get a prompt map with its responses and follow-ups
+ * API endpoint to get, update, or delete a prompt map with its responses and follow-ups
  */
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import type { Provider } from '$lib/llm/types';
+
+interface UpdatePromptMapRequest {
+	name: string;
+	prompt: string;
+	promptPosition: { x: number; y: number };
+	responses: {
+		id: string; // Client-side ID for linking
+		provider: Provider;
+		model: string;
+		modelName: string;
+		response: string;
+		latencyMs: number | null;
+		promptTokens?: number | null;
+		completionTokens?: number | null;
+		costCents?: number | null;
+		rating: number | null;
+		notes: string | null;
+		liked?: boolean;
+		position: { x: number; y: number };
+		parentNodeId: string;
+		parentNodeType: 'prompt' | 'followup';
+	}[];
+	followUps?: {
+		id: string; // Client-side ID for linking
+		prompt: string;
+		position: { x: number; y: number };
+		depth: number;
+		parentResponseIds: string[]; // Client-side response IDs
+	}[];
+}
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const session = locals.session;
@@ -231,4 +262,172 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	}
 
 	return json({ success: true });
+};
+
+export const PUT: RequestHandler = async ({ params, request, locals }) => {
+	const session = locals.session;
+	const supabase = locals.supabase;
+
+	if (!session) {
+		throw error(401, 'Unauthorized');
+	}
+
+	const { id } = params;
+	const body = (await request.json()) as UpdatePromptMapRequest;
+	const { name, prompt, promptPosition, responses, followUps = [] } = body;
+
+	if (!name || !prompt) {
+		throw error(400, 'Missing name or prompt');
+	}
+
+	// Verify user owns this prompt_map
+	const { data: existingMap, error: fetchError } = await supabase
+		.from('prompt_maps')
+		.select('id')
+		.eq('id', id)
+		.eq('user_id', session.user.id)
+		.single();
+
+	if (fetchError || !existingMap) {
+		throw error(404, 'Prompt map not found');
+	}
+
+	// Update the prompt map
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const { error: updateError } = await (supabase as any)
+		.from('prompt_maps')
+		.update({
+			name,
+			prompt,
+			prompt_position_x: promptPosition.x,
+			prompt_position_y: promptPosition.y,
+			updated_at: new Date().toISOString()
+		})
+		.eq('id', id)
+		.eq('user_id', session.user.id);
+
+	if (updateError) {
+		console.error('Failed to update prompt map:', updateError);
+		throw error(500, 'Failed to update prompt map');
+	}
+
+	// Delete existing follow_up_parents (will cascade from follow_up_prompts)
+	// Delete existing follow_up_prompts
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	await (supabase as any).from('follow_up_prompts').delete().eq('prompt_map_id', id);
+
+	// Delete existing model_responses
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	await (supabase as any).from('model_responses').delete().eq('prompt_map_id', id);
+
+	// Maps to translate client-side IDs to server-side IDs
+	const responseIdMap = new Map<string, string>(); // client ID -> server ID
+	const followUpIdMap = new Map<string, string>(); // client ID -> server ID
+
+	// Insert follow-up prompts first (to get their IDs before inserting responses)
+	if (followUps.length > 0) {
+		const followUpRecords = followUps.map((f) => ({
+			prompt_map_id: id,
+			prompt: f.prompt,
+			position_x: f.position.x,
+			position_y: f.position.y,
+			depth: f.depth,
+			status: 'ready'
+		}));
+
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const { data: insertedFollowUps, error: followUpError } = await (supabase as any)
+			.from('follow_up_prompts')
+			.insert(followUpRecords)
+			.select();
+
+		if (followUpError) {
+			console.error('Failed to save follow-ups:', followUpError);
+			throw error(500, 'Failed to save follow-ups');
+		}
+
+		// Map client IDs to server IDs (insertion order is preserved)
+		const insertedFollowUpsArray = insertedFollowUps as { id: string }[];
+		followUps.forEach((f, index) => {
+			followUpIdMap.set(f.id, insertedFollowUpsArray[index].id);
+		});
+	}
+
+	// Insert model responses
+	if (responses.length > 0) {
+		const responseRecords = responses.map((r) => ({
+			prompt_map_id: id,
+			provider: r.provider,
+			model: r.model,
+			response: r.response,
+			latency_ms: r.latencyMs,
+			prompt_tokens: r.promptTokens ?? null,
+			completion_tokens: r.completionTokens ?? null,
+			cost_cents: r.costCents ?? null,
+			rating: r.rating,
+			notes: r.notes,
+			liked: r.liked ?? false,
+			position_x: r.position.x,
+			position_y: r.position.y,
+			parent_node_id:
+				r.parentNodeType === 'followup' ? followUpIdMap.get(r.parentNodeId) || null : null,
+			parent_node_type: r.parentNodeType
+		}));
+
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const { data: insertedResponses, error: responsesError } = await (supabase as any)
+			.from('model_responses')
+			.insert(responseRecords)
+			.select();
+
+		if (responsesError) {
+			console.error('Failed to save responses:', responsesError);
+			throw error(500, 'Failed to save responses');
+		}
+
+		// Map client IDs to server IDs
+		const insertedResponsesArray = insertedResponses as { id: string }[];
+		responses.forEach((r, index) => {
+			responseIdMap.set(r.id, insertedResponsesArray[index].id);
+		});
+	}
+
+	// Insert follow-up parents junction records
+	if (followUps.length > 0) {
+		const parentRecords: { follow_up_id: string; parent_response_id: string; merge_order: number }[] =
+			[];
+
+		followUps.forEach((f) => {
+			const followUpServerId = followUpIdMap.get(f.id);
+			if (followUpServerId) {
+				f.parentResponseIds.forEach((parentClientId, index) => {
+					const parentServerId = responseIdMap.get(parentClientId);
+					if (parentServerId) {
+						parentRecords.push({
+							follow_up_id: followUpServerId,
+							parent_response_id: parentServerId,
+							merge_order: index
+						});
+					}
+				});
+			}
+		});
+
+		if (parentRecords.length > 0) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const { error: parentsError } = await (supabase as any)
+				.from('follow_up_parents')
+				.insert(parentRecords);
+
+			if (parentsError) {
+				console.error('Failed to save follow-up parents:', parentsError);
+				// Don't fail the entire save for this
+			}
+		}
+	}
+
+	return json({
+		success: true,
+		promptMapId: id
+	});
 };

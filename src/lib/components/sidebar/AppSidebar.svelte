@@ -69,6 +69,8 @@
 
 			// Load into canvas store (includes follow-up data for multi-turn)
 			canvasHandlers.loadPromptMap({
+				id: promptMap.id,
+				name: promptMap.name,
 				prompt: promptMap.prompt,
 				promptPosition: promptMap.promptPosition,
 				responses: promptMap.responses,

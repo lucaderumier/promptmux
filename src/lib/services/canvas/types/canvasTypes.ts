@@ -83,6 +83,10 @@ export interface CanvasState {
 	isGenerating: boolean;
 	error: string | null;
 	hoveredNodeId: string | null;
+	// Loaded canvas tracking
+	loadedPromptMapId: string | null; // ID of canvas loaded from library
+	loadedPromptMapName: string | null; // Name of loaded canvas
+	isModified: boolean; // True if canvas changed since load
 }
 
 // Legacy types for backwards compatibility

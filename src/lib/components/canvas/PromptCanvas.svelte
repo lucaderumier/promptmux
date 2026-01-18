@@ -79,6 +79,9 @@
 	let isSaving = $state(false);
 	let saveError = $state<string | null>(null);
 
+	// Update state (for saving to existing canvas)
+	let isUpdating = $state(false);
+
 	// Response detail panel state
 	let detailPanelNodeId = $state<string | null>(null);
 
@@ -89,6 +92,9 @@
 	let followUpNodes = $state<FollowUpNode[]>([]);
 	let edges = $state<CanvasEdge[]>([]);
 	let hoveredNodeId = $state<string | null>(null);
+	let loadedPromptMapId = $state<string | null>(null);
+	let loadedPromptMapName = $state<string | null>(null);
+	let isModified = $state(false);
 
 	// Derived state for detail panel (must be after responseNodes declaration)
 	const detailPanelNode = $derived(
@@ -114,6 +120,9 @@
 			promptValue = state.prompt;
 			promptPosition = state.promptPosition;
 			hoveredNodeId = state.hoveredNodeId;
+			loadedPromptMapId = state.loadedPromptMapId;
+			loadedPromptMapName = state.loadedPromptMapName;
+			isModified = state.isModified;
 		});
 		return unsubscribe;
 	});
@@ -532,6 +541,11 @@
 			responseNodes.some((n) => n.modelId && n.response)
 	);
 
+	// Check if canvas can be updated (loaded from library and modified)
+	const canUpdate = $derived(
+		loadedPromptMapId !== null && isModified && canSave
+	);
+
 	// Check if canvas has content
 	const hasContent = $derived(
 		promptValue.trim().length > 0 || responseNodes.length > 0 || followUpNodes.length > 0
@@ -646,6 +660,69 @@
 			saveError = err instanceof Error ? err.message : 'Failed to save';
 		} finally {
 			isSaving = false;
+		}
+	}
+
+	// Handle update existing canvas
+	async function handleUpdate() {
+		if (!loadedPromptMapId || isUpdating || !loadedPromptMapName) return;
+
+		isUpdating = true;
+
+		try {
+			const response = await fetch(`/api/library/${loadedPromptMapId}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name: loadedPromptMapName,
+					prompt: promptValue,
+					promptPosition,
+					responses: responseNodes
+						.filter((n) => n.modelId)
+						.map((n) => ({
+							id: n.id,
+							provider: n.provider,
+							model: n.modelId,
+							modelName: n.modelName,
+							response: n.response,
+							latencyMs: n.latencyMs,
+							promptTokens: n.promptTokens,
+							completionTokens: n.completionTokens,
+							costCents: n.costCents,
+							rating: n.rating,
+							notes: n.notes,
+							liked: n.liked,
+							position: n.position,
+							parentNodeId: n.parentNodeId,
+							parentNodeType: n.parentNodeType
+						})),
+					followUps: followUpNodes.map((f) => ({
+						id: f.id,
+						prompt: f.prompt,
+						position: f.position,
+						depth: f.depth,
+						parentResponseIds: f.parentResponseIds
+					}))
+				})
+			});
+
+			if (!response.ok) {
+				const data = await response.json();
+				throw new Error(data.message || 'Failed to update');
+			}
+
+			// Mark canvas as saved (reset modified state)
+			canvasHandlers.markSaved();
+
+			// Refresh sidebar
+			invalidateAll();
+
+			toast.success('Changes saved');
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Failed to update';
+			toast.error(message);
+		} finally {
+			isUpdating = false;
 		}
 	}
 </script>
@@ -832,14 +909,40 @@
 			<FilePlus class="h-4 w-4" />
 			New Canvas
 		</Button>
-		<Button
-			onclick={openSaveDialog}
-			disabled={!canSave}
-			class="gap-2 shadow-lg"
-		>
-			<Save class="h-4 w-4" />
-			Save to Library
-		</Button>
+		{#if loadedPromptMapId}
+			<!-- Loaded from library: show Save and Save new -->
+			<Button
+				variant="outline"
+				onclick={handleUpdate}
+				disabled={!canUpdate || isUpdating}
+				class="gap-2 shadow-lg"
+			>
+				{#if isUpdating}
+					<Loader2 class="h-4 w-4 animate-spin" />
+				{:else}
+					<Save class="h-4 w-4" />
+				{/if}
+				Save
+			</Button>
+			<Button
+				onclick={openSaveDialog}
+				disabled={!canSave}
+				class="gap-2 shadow-lg"
+			>
+				<FilePlus class="h-4 w-4" />
+				Save new
+			</Button>
+		{:else}
+			<!-- New canvas: show Save to Library -->
+			<Button
+				onclick={openSaveDialog}
+				disabled={!canSave}
+				class="gap-2 shadow-lg"
+			>
+				<Save class="h-4 w-4" />
+				Save to Library
+			</Button>
+		{/if}
 	</div>
 
 	<!-- Save Dialog -->

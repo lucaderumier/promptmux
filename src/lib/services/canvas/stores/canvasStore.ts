@@ -23,7 +23,10 @@ const initialState: CanvasState = {
 	maxDepthWarningThreshold: 5,
 	isGenerating: false,
 	error: null,
-	hoveredNodeId: null
+	hoveredNodeId: null,
+	loadedPromptMapId: null,
+	loadedPromptMapName: null,
+	isModified: false
 };
 
 export const canvasStore = writable<CanvasState>(initialState);
@@ -94,11 +97,11 @@ function generateNodeId(prefix: string = 'node'): string {
 
 export const canvasHandlers = {
 	setPrompt: (prompt: string) => {
-		canvasStore.update((state) => ({ ...state, prompt }));
+		canvasStore.update((state) => ({ ...state, prompt, isModified: true }));
 	},
 
 	setPromptPosition: (position: NodePosition) => {
-		canvasStore.update((state) => ({ ...state, promptPosition: position }));
+		canvasStore.update((state) => ({ ...state, promptPosition: position, isModified: true }));
 	},
 
 	addResponseNode: (
@@ -142,7 +145,8 @@ export const canvasHandlers = {
 			return {
 				...state,
 				responseNodes,
-				edges: [...state.edges, newEdge]
+				edges: [...state.edges, newEdge],
+				isModified: true
 			};
 		});
 
@@ -175,7 +179,7 @@ export const canvasHandlers = {
 				}
 			}
 
-			return { ...state, responseNodes, followUpNodes, edges };
+			return { ...state, responseNodes, followUpNodes, edges, isModified: true };
 		});
 		canvasLogger.log('Removed response node:', nodeId);
 	},
@@ -187,7 +191,7 @@ export const canvasHandlers = {
 			if (node) {
 				responseNodes.set(nodeId, { ...node, position });
 			}
-			return { ...state, responseNodes };
+			return { ...state, responseNodes, isModified: true };
 		});
 	},
 
@@ -204,7 +208,7 @@ export const canvasHandlers = {
 					status: 'idle'
 				});
 			}
-			return { ...state, responseNodes };
+			return { ...state, responseNodes, isModified: true };
 		});
 		canvasLogger.log('Set model for node:', nodeId, modelId);
 	},
@@ -266,7 +270,7 @@ export const canvasHandlers = {
 					status: 'done'
 				});
 			}
-			return { ...state, responseNodes };
+			return { ...state, responseNodes, isModified: true };
 		});
 	},
 
@@ -281,7 +285,7 @@ export const canvasHandlers = {
 					status: 'error'
 				});
 			}
-			return { ...state, responseNodes };
+			return { ...state, responseNodes, isModified: true };
 		});
 	},
 
@@ -302,7 +306,7 @@ export const canvasHandlers = {
 			if (node) {
 				responseNodes.set(nodeId, { ...node, rating });
 			}
-			return { ...state, responseNodes };
+			return { ...state, responseNodes, isModified: true };
 		});
 	},
 
@@ -313,7 +317,7 @@ export const canvasHandlers = {
 			if (node) {
 				responseNodes.set(nodeId, { ...node, notes });
 			}
-			return { ...state, responseNodes };
+			return { ...state, responseNodes, isModified: true };
 		});
 	},
 
@@ -324,7 +328,7 @@ export const canvasHandlers = {
 			if (node) {
 				responseNodes.set(nodeId, { ...node, liked: !node.liked });
 			}
-			return { ...state, responseNodes };
+			return { ...state, responseNodes, isModified: true };
 		});
 		canvasLogger.log('Toggled like for node:', nodeId);
 	},
@@ -384,7 +388,8 @@ export const canvasHandlers = {
 			return {
 				...state,
 				followUpNodes,
-				edges: [...state.edges, ...newEdges]
+				edges: [...state.edges, ...newEdges],
+				isModified: true
 			};
 		});
 
@@ -403,7 +408,7 @@ export const canvasHandlers = {
 					status: prompt.trim() ? 'ready' : 'editing'
 				});
 			}
-			return { ...state, followUpNodes };
+			return { ...state, followUpNodes, isModified: true };
 		});
 	},
 
@@ -436,7 +441,7 @@ export const canvasHandlers = {
 			if (node) {
 				followUpNodes.set(nodeId, { ...node, position });
 			}
-			return { ...state, followUpNodes };
+			return { ...state, followUpNodes, isModified: true };
 		});
 	},
 
@@ -458,7 +463,7 @@ export const canvasHandlers = {
 				);
 
 				followUpNodes.delete(nodeId);
-				return { ...state, followUpNodes, responseNodes, edges };
+				return { ...state, followUpNodes, responseNodes, edges, isModified: true };
 			}
 			return state;
 		});
@@ -521,7 +526,8 @@ export const canvasHandlers = {
 				...state,
 				responseNodes,
 				followUpNodes,
-				edges: [...state.edges, newEdge]
+				edges: [...state.edges, newEdge],
+				isModified: true
 			};
 		});
 
@@ -624,7 +630,8 @@ export const canvasHandlers = {
 				return {
 					...state,
 					followUpNodes,
-					edges: [...state.edges, newEdge]
+					edges: [...state.edges, newEdge],
+					isModified: true
 				};
 			}
 			return state;
@@ -653,7 +660,7 @@ export const canvasHandlers = {
 				const edgeId = `${responseId}-${followUpId}`;
 				const edges = state.edges.filter((e) => e.id !== edgeId);
 
-				return { ...state, followUpNodes, edges };
+				return { ...state, followUpNodes, edges, isModified: true };
 			}
 			return state;
 		});
@@ -676,6 +683,7 @@ export const canvasHandlers = {
 					undoHistory.shift();
 				}
 			}
+			// Reset to initial state (includes clearing loaded state)
 			return cloneState(initialState);
 		});
 		nodeIdCounter = 0;
@@ -700,8 +708,27 @@ export const canvasHandlers = {
 		return undoHistory.length > 0;
 	},
 
+	// Clear loaded canvas state (called on clear/new canvas)
+	clearLoadedState: () => {
+		canvasStore.update((state) => ({
+			...state,
+			loadedPromptMapId: null,
+			loadedPromptMapName: null,
+			isModified: false
+		}));
+		canvasLogger.log('Cleared loaded state');
+	},
+
+	// Mark canvas as saved (reset modified state)
+	markSaved: () => {
+		canvasStore.update((state) => ({ ...state, isModified: false }));
+		canvasLogger.log('Marked canvas as saved');
+	},
+
 	// Load a prompt map from the library
 	loadPromptMap: (data: {
+		id?: string; // Prompt map ID from library
+		name?: string; // Prompt map name from library
 		prompt: string;
 		promptPosition: { x: number; y: number };
 		responses: {
@@ -807,7 +834,10 @@ export const canvasHandlers = {
 			maxDepthWarningThreshold: 5,
 			isGenerating: false,
 			error: null,
-			hoveredNodeId: null
+			hoveredNodeId: null,
+			loadedPromptMapId: data.id ?? null,
+			loadedPromptMapName: data.name ?? null,
+			isModified: false
 		});
 
 		canvasLogger.log(
@@ -815,7 +845,8 @@ export const canvasHandlers = {
 			responseNodes.size,
 			'responses and',
 			followUpNodes.size,
-			'follow-ups'
+			'follow-ups',
+			data.id ? `(id: ${data.id})` : '(new canvas)'
 		);
 	}
 };
