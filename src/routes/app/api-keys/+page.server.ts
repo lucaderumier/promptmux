@@ -3,6 +3,7 @@ import { fail } from '@sveltejs/kit';
 import { encrypt, decrypt, maskApiKey } from '$lib/server/encryption';
 import type { ApiKeyInfo } from '$lib/services/settings';
 import type { Provider } from '$lib/llm/types';
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '$lib/server/rate-limit';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const { supabase, session } = locals;
@@ -18,7 +19,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.eq('user_id', session.user.id);
 
 	if (error) {
-		console.error('Error fetching API keys:', error);
+		console.error('Failed to fetch API keys for user:', session.user.id);
 		return { apiKeys: [] };
 	}
 
@@ -28,8 +29,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		try {
 			const decryptedKey = decrypt(key.encrypted_key);
 			maskedKey = maskApiKey(decryptedKey);
-		} catch (e) {
-			console.error('Error decrypting key for masking:', e);
+		} catch {
+			// Decryption failed - use default masked value
 		}
 
 		return {
@@ -50,6 +51,13 @@ export const actions: Actions = {
 
 		if (!session) {
 			return fail(401, { error: 'Unauthorized' });
+		}
+
+		// Rate limiting
+		const rateLimitKey = createRateLimitKey(session.user.id, 'api-key-save');
+		const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.API_KEY_SAVE);
+		if (!rateLimit.allowed) {
+			return fail(429, { error: 'Too many requests. Please wait before trying again.' });
 		}
 
 		const formData = await request.formData();
@@ -88,7 +96,7 @@ export const actions: Actions = {
 				.single();
 
 			if (error) {
-				console.error('Error saving API key:', error);
+				console.error('Failed to save API key for user:', session.user.id);
 				return fail(500, { error: 'Failed to save API key' });
 			}
 
@@ -102,8 +110,8 @@ export const actions: Actions = {
 			};
 
 			return { success: true, apiKey: apiKeyInfo };
-		} catch (e) {
-			console.error('Error in save action:', e);
+		} catch {
+			console.error('Failed to encrypt API key for user:', session.user.id);
 			return fail(500, { error: 'Failed to encrypt and save API key' });
 		}
 	},
@@ -129,7 +137,7 @@ export const actions: Actions = {
 			.eq('provider', provider);
 
 		if (error) {
-			console.error('Error removing API key:', error);
+			console.error('Failed to remove API key for user:', session.user.id);
 			return fail(500, { error: 'Failed to remove API key' });
 		}
 

@@ -19,6 +19,8 @@ import {
 } from '$lib/llm/providers';
 import type { ProviderInstance, ChatMessage } from '$lib/llm/providers';
 import { decrypt } from '$lib/server/encryption';
+import { validateGenerateRequest } from '$lib/server/validation';
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '$lib/server/rate-limit';
 
 // Request format - supports both single-turn and multi-turn
 interface GenerateRequest {
@@ -36,6 +38,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(401, 'Unauthorized');
 	}
 
+	// Rate limiting
+	const rateLimitKey = createRateLimitKey(session.user.id, 'llm-generate');
+	const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.LLM_GENERATE);
+	if (!rateLimit.allowed) {
+		throw error(429, 'Too many requests. Please wait before trying again.');
+	}
+
 	const body = await request.json();
 	const { prompt, messages, models, systemPrompt } = body as GenerateRequest;
 
@@ -49,6 +58,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (!models || models.length === 0) {
 		throw error(400, 'Missing models');
+	}
+
+	// Validate input lengths to prevent DoS
+	const validationError = validateGenerateRequest(body);
+	if (validationError) {
+		throw error(400, validationError.message);
 	}
 
 	// Fetch user's API keys from database
@@ -67,7 +82,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		try {
 			apiKeys[keyData.provider] = decrypt(keyData.encrypted_key);
 		} catch (e) {
-			console.error(`Failed to decrypt key for provider ${keyData.provider}:`, e);
+			// Log without exposing provider details in production
+			console.error('Failed to decrypt API key for user:', session.user.id);
 		}
 	}
 
@@ -97,7 +113,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				provider: model.provider,
 				response: '',
 				latencyMs: 0,
-				error: `Provider not configured: ${model.provider}`
+				error: 'Provider not configured. Please check your API key settings.'
 			};
 		}
 
@@ -146,12 +162,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				costCents
 			};
 		} catch (err) {
+			// Sanitize error messages to avoid leaking sensitive provider details
+			const sanitizedError = sanitizeErrorMessage(err);
 			return {
 				modelId: model.id,
 				provider: model.provider,
 				response: '',
 				latencyMs: Date.now() - startTime,
-				error: err instanceof Error ? err.message : 'Unknown error'
+				error: sanitizedError
 			};
 		}
 	});
@@ -178,4 +196,55 @@ function createProvider(provider: Provider, apiKey: string): ProviderInstance | 
 		default:
 			return null;
 	}
+}
+
+/**
+ * Sanitize error messages to avoid leaking sensitive provider implementation details.
+ * Maps known error patterns to user-friendly messages.
+ */
+function sanitizeErrorMessage(err: unknown): string {
+	const message = err instanceof Error ? err.message.toLowerCase() : '';
+
+	// Rate limiting
+	if (message.includes('rate limit') || message.includes('too many requests') || message.includes('429')) {
+		return 'Rate limit exceeded. Please wait a moment and try again.';
+	}
+
+	// Authentication errors
+	if (message.includes('unauthorized') || message.includes('invalid api key') || message.includes('401') || message.includes('authentication')) {
+		return 'Authentication failed. Please check your API key.';
+	}
+
+	// Quota/billing errors
+	if (message.includes('quota') || message.includes('insufficient') || message.includes('billing') || message.includes('402')) {
+		return 'API quota exceeded or billing issue. Please check your account.';
+	}
+
+	// Model not found
+	if (message.includes('model not found') || message.includes('does not exist') || message.includes('404')) {
+		return 'Model not available. It may have been deprecated or you may not have access.';
+	}
+
+	// Content policy
+	if (message.includes('content policy') || message.includes('safety') || message.includes('blocked')) {
+		return 'Request blocked due to content policy.';
+	}
+
+	// Timeout
+	if (message.includes('timeout') || message.includes('timed out')) {
+		return 'Request timed out. Please try again.';
+	}
+
+	// Network errors
+	if (message.includes('network') || message.includes('connection') || message.includes('econnrefused')) {
+		return 'Network error. Please check your connection and try again.';
+	}
+
+	// Context length
+	if (message.includes('context length') || message.includes('too long') || message.includes('token limit')) {
+		return 'Input too long. Please reduce the prompt length.';
+	}
+
+	// Generic fallback - don't expose original message
+	return 'An error occurred while generating the response. Please try again.';
 }

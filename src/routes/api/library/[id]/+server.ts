@@ -5,6 +5,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { Provider } from '$lib/llm/types';
+import { validatePromptMapRequest, validateLength, INPUT_LIMITS } from '$lib/server/validation';
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '$lib/server/rate-limit';
 
 interface UpdatePromptMapRequest {
 	name: string;
@@ -250,6 +252,12 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		throw error(400, 'Name is required');
 	}
 
+	// Validate name length
+	const nameError = validateLength(name, 'name', INPUT_LIMITS.NAME_MAX);
+	if (nameError) {
+		throw error(400, nameError.message);
+	}
+
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const { error: updateError } = await (supabase as any)
 		.from('prompt_maps')
@@ -272,12 +280,25 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		throw error(401, 'Unauthorized');
 	}
 
+	// Rate limiting
+	const rateLimitKey = createRateLimitKey(session.user.id, 'library-save');
+	const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.LIBRARY_SAVE);
+	if (!rateLimit.allowed) {
+		throw error(429, 'Too many requests. Please wait before trying again.');
+	}
+
 	const { id } = params;
 	const body = (await request.json()) as UpdatePromptMapRequest;
 	const { name, prompt, promptPosition, responses, followUps = [] } = body;
 
 	if (!name || !prompt) {
 		throw error(400, 'Missing name or prompt');
+	}
+
+	// Validate input lengths to prevent DoS
+	const validationError = validatePromptMapRequest(body);
+	if (validationError) {
+		throw error(400, validationError.message);
 	}
 
 	// Verify user owns this prompt_map

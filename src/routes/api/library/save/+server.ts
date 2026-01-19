@@ -5,6 +5,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { Provider } from '$lib/llm/types';
+import { validatePromptMapRequest } from '$lib/server/validation';
+import { checkRateLimit, createRateLimitKey, RATE_LIMITS } from '$lib/server/rate-limit';
 
 interface SavePromptMapRequest {
 	name: string;
@@ -45,11 +47,24 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(401, 'Unauthorized');
 	}
 
+	// Rate limiting
+	const rateLimitKey = createRateLimitKey(session.user.id, 'library-save');
+	const rateLimit = checkRateLimit(rateLimitKey, RATE_LIMITS.LIBRARY_SAVE);
+	if (!rateLimit.allowed) {
+		throw error(429, 'Too many requests. Please wait before trying again.');
+	}
+
 	const body = (await request.json()) as SavePromptMapRequest;
 	const { name, prompt, promptPosition, folderId, responses, followUps = [] } = body;
 
 	if (!name || !prompt) {
 		throw error(400, 'Missing name or prompt');
+	}
+
+	// Validate input lengths to prevent DoS
+	const validationError = validatePromptMapRequest(body);
+	if (validationError) {
+		throw error(400, validationError.message);
 	}
 
 	// Create the prompt map

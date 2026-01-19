@@ -1,6 +1,20 @@
 /**
  * Server-side encryption utilities for API keys
  * Uses AES-256-GCM for secure encryption
+ *
+ * KEY ROTATION PROCEDURE:
+ * If ENCRYPTION_KEY is compromised, follow these steps:
+ * 1. Generate a new 32-byte key: `openssl rand -hex 32`
+ * 2. Create a migration script that:
+ *    a. Fetches all encrypted_key values from api_keys table
+ *    b. Decrypts each with OLD_ENCRYPTION_KEY
+ *    c. Re-encrypts each with NEW_ENCRYPTION_KEY
+ *    d. Updates the database records
+ * 3. Update ENCRYPTION_KEY environment variable
+ * 4. Deploy the changes
+ *
+ * Note: This must be done atomically to avoid data loss.
+ * Consider implementing versioned encryption (key_version field) for smoother rotation.
  */
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
