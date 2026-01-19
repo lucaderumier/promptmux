@@ -44,13 +44,12 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const display_name = formData.get('display_name') as string;
 		const bio = formData.get('bio') as string;
-		const avatar_url = formData.get('avatar_url') as string;
 		const website = formData.get('website') as string;
 		const twitter = formData.get('twitter') as string;
 		const github = formData.get('github') as string;
 		const linkedin = formData.get('linkedin') as string;
 
-		// Upsert profile
+		// Upsert profile (avatar_url is handled separately via /api/avatar)
 		const { data, error } = await supabase
 			.from('user_profiles')
 			.upsert(
@@ -58,7 +57,6 @@ export const actions: Actions = {
 					user_id: session.user.id,
 					display_name,
 					bio,
-					avatar_url,
 					website,
 					twitter,
 					github,

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -7,12 +8,14 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import * as Avatar from '$lib/components/ui/avatar';
-	import { Globe, Twitter, Github, Linkedin } from '@lucide/svelte';
+	import { Globe, Twitter, Github, Linkedin, Upload, Trash2 } from '@lucide/svelte';
 
 	let { data } = $props();
 
 	let isLoading = $state(false);
+	let isUploadingAvatar = $state(false);
 	let localProfile = $state<typeof data.profile | null>(null);
+	let fileInput = $state<HTMLInputElement | null>(null);
 
 	// Use local state if modified, otherwise use data from server
 	const profile = $derived(localProfile ?? data.profile);
@@ -25,6 +28,79 @@
 			.join('')
 			.toUpperCase()
 			.slice(0, 2);
+	}
+
+	async function handleAvatarUpload(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file || !profile) return;
+
+		isUploadingAvatar = true;
+		try {
+			const formData = new FormData();
+			formData.append('file', file);
+
+			const response = await fetch('/api/avatar', {
+				method: 'POST',
+				body: formData
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.message || 'Failed to upload avatar');
+			}
+
+			const result = await response.json();
+			localProfile = {
+				display_name: profile.display_name,
+				bio: profile.bio,
+				avatar_url: result.avatarUrl,
+				website: profile.website,
+				twitter: profile.twitter,
+				github: profile.github,
+				linkedin: profile.linkedin
+			};
+			toast.success('Avatar updated successfully');
+			// Refresh page data so sidebar avatar updates
+			await invalidateAll();
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Failed to upload avatar');
+		} finally {
+			isUploadingAvatar = false;
+			if (input) input.value = '';
+		}
+	}
+
+	async function handleAvatarDelete() {
+		if (!profile) return;
+
+		isUploadingAvatar = true;
+		try {
+			const response = await fetch('/api/avatar', {
+				method: 'DELETE'
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to delete avatar');
+			}
+
+			localProfile = {
+				display_name: profile.display_name,
+				bio: profile.bio,
+				avatar_url: '',
+				website: profile.website,
+				twitter: profile.twitter,
+				github: profile.github,
+				linkedin: profile.linkedin
+			};
+			toast.success('Avatar removed');
+			// Refresh page data so sidebar avatar updates
+			await invalidateAll();
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Failed to remove avatar');
+		} finally {
+			isUploadingAvatar = false;
+		}
 	}
 </script>
 
@@ -44,11 +120,13 @@
 				isLoading = false;
 				if (result.type === 'success') {
 					toast.success('Profile saved successfully');
-					if (result.data?.profile) {
-						localProfile = result.data.profile;
+					const successData = result.data as { profile?: NonNullable<typeof data.profile> } | undefined;
+					if (successData?.profile) {
+						localProfile = successData.profile;
 					}
 				} else if (result.type === 'failure') {
-					toast.error(result.data?.error || 'Failed to save profile');
+					const failData = result.data as { error?: string } | undefined;
+					toast.error(failData?.error || 'Failed to save profile');
 				}
 			};
 		}}
@@ -65,16 +143,39 @@
 						<Avatar.Fallback class="text-lg">{getInitials(profile?.display_name || '')}</Avatar.Fallback>
 					</Avatar.Root>
 					<div class="flex-1 space-y-2">
-						<Label for="avatar_url">Avatar URL</Label>
-						<Input
-							id="avatar_url"
-							name="avatar_url"
-							type="url"
-							placeholder="https://example.com/avatar.jpg"
-							value={profile?.avatar_url || ''}
-							oninput={(e) => localProfile = { ...profile, avatar_url: e.currentTarget.value }}
-						/>
-						<p class="text-xs text-muted-foreground">Enter a URL to your profile picture</p>
+						<Label>Profile Picture</Label>
+						<div class="flex gap-2">
+							<input
+								bind:this={fileInput}
+								type="file"
+								accept="image/jpeg,image/png,image/gif,image/webp"
+								class="hidden"
+								onchange={handleAvatarUpload}
+							/>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								disabled={isUploadingAvatar}
+								onclick={() => fileInput?.click()}
+							>
+								<Upload class="size-4 mr-2" />
+								{isUploadingAvatar ? 'Uploading...' : 'Upload'}
+							</Button>
+							{#if profile?.avatar_url}
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									disabled={isUploadingAvatar}
+									onclick={handleAvatarDelete}
+								>
+									<Trash2 class="size-4 mr-2" />
+									Remove
+								</Button>
+							{/if}
+						</div>
+						<p class="text-xs text-muted-foreground">JPEG, PNG, GIF or WebP. Max 5MB.</p>
 					</div>
 				</div>
 
@@ -162,7 +263,7 @@
 			</CardContent>
 		</Card>
 
-		<div class="flex justify-end">
+		<div class="flex justify-end pb-8">
 			<Button type="submit" disabled={isLoading}>
 				{#if isLoading}
 					Saving...
