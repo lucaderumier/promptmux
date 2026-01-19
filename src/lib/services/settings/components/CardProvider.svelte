@@ -92,7 +92,7 @@
 							<span class="font-mono text-xs text-muted-foreground">{apiKeyInfo.maskedKey}</span>
 						{/if}
 					</div>
-					<Card.Description class="text-sm">{config.description}</Card.Description>
+					<Card.Description class="text-sm min-h-[2.5rem]">{config.description}</Card.Description>
 				</div>
 			</div>
 		{/if}
